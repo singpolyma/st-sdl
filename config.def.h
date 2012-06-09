@@ -13,7 +13,7 @@ static unsigned int tripleclicktimeout = 600;
 static char termname[] = "st-256color";
 
 static unsigned int tabspaces = 8;
-
+#define WORD_BREAK " "
 
 /* Terminal colors (16 first used in escape sequence) */
 static const char *colorname[] = {

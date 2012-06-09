@@ -277,6 +277,7 @@ typedef struct {
 } DC;
 
 static void die(const char *, ...);
+static bool is_word_break(char);
 static void draw(void);
 static void redraw(void);
 static void drawregion(int, int, int, int);
@@ -828,12 +829,12 @@ brelease(XEvent *e) {
 				/* double click to select word */
 				sel.bx = sel.ex;
 				while(sel.bx > 0 && term.line[sel.ey][sel.bx-1].state & GLYPH_SET &&
-						term.line[sel.ey][sel.bx-1].c[0] != ' ') {
+						!is_word_break(term.line[sel.ey][sel.bx-1].c[0])) {
 					sel.bx--;
 				}
 				sel.b.x = sel.bx;
 				while(sel.ex < term.col-1 && term.line[sel.ey][sel.ex+1].state & GLYPH_SET &&
-						term.line[sel.ey][sel.ex+1].c[0] != ' ') {
+						!is_word_break(term.line[sel.ey][sel.ex+1].c[0])) {
 					sel.ex++;
 				}
 				sel.e.x = sel.ex;
@@ -879,6 +880,17 @@ die(const char *errstr, ...) {
 	vfprintf(stderr, errstr, ap);
 	va_end(ap);
 	exit(EXIT_FAILURE);
+}
+
+bool
+is_word_break(char c) {
+	static char *word_break = WORD_BREAK;
+	char *s = word_break;
+	while(*s) {
+		if(*s == c) return true;
+		s++;
+	}
+	return false;
 }
 
 void
