@@ -2703,7 +2703,7 @@ kpress(SDL_Event *ev) {
 			/* XXX: shift up/down doesn't work */
 			sprintf(buf, "\033%c%c",
 				IS_SET(MODE_APPKEYPAD) ? 'O' : '[',
-				(shift ? "dacb":"DACB")[ksym - SDLK_LEFT]); // TODO
+				(shift ? "abcd":"ABCD")[ksym - SDLK_UP]); // TODO
 			ttywrite(buf, 3);
 			break;
 		case SDLK_INSERT:
