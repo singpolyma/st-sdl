@@ -2394,6 +2394,8 @@ sdlinit(void) {
 
 	sdlresettitle();
 	expose(NULL);
+	vi = SDL_GetVideoInfo();
+	cresize(vi->current_w, vi->current_h);
 }
 
 void
