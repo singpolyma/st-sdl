@@ -2405,7 +2405,6 @@ s[bytelen] = '\0';
 		xclear(winx, winy + xw.ch, winx + width, xw.h);
 
 
-
 SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
 if(!(text_surface=TTF_RenderUTF8_Solid(drawfont,s,color))) {
 	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
@@ -2723,10 +2722,11 @@ kpress(SDL_Event *ev) {
 			/* 3. X lookup  */
 		default:
 			if(e->keysym.unicode) {
-				if(meta && e->keysym.unicode <= 127)
+				long u = e->keysym.unicode;
+				int len = utf8encode(&u, buf);
+				if(meta && len == 1)
 					ttywrite("\033", 1);
-				buf[0] = e->keysym.unicode & 0x7F; // TODO UTF-8
-				ttywrite(buf, 1);
+				ttywrite(buf, len);
 			}
 			break;
 		}
