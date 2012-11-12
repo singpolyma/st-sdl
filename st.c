@@ -25,7 +25,6 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <X11/extensions/Xdbe.h>
 #include <X11/Xft/Xft.h>
@@ -2381,16 +2380,6 @@ sdlinit(void) {
 		fprintf(stderr,"Unable to set video mode: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
 	}
-
-	/* white cursor, black outline */
-// TODO
-#if 0
-	cursor = XCreateFontCursor(xw.dpy, XC_xterm);
-	XDefineCursor(xw.dpy, xw.win, cursor);
-	XRecolorCursor(xw.dpy, cursor,
-		&(XColor){.red = 0xffff, .green = 0xffff, .blue = 0xffff},
-		&(XColor){.red = 0x0000, .green = 0x0000, .blue = 0x0000});
-#endif
 
 	sdlresettitle();
 	expose(NULL);
