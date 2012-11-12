@@ -22,8 +22,6 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-#include <X11/Xutil.h>
-#include <X11/Xft/Xft.h>
 
 #include <SDL/SDL.h>
 #include <SDL/SDL_thread.h>
@@ -62,7 +60,7 @@
 #define REDRAW_TIMEOUT (80*1000) /* 80 ms */
 
 /* macros */
-#define CLEANMASK(mask) (mask & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
+#define CLEANMASK(mask) (mask & (KMOD_SHIFT|KMOD_CTRL|KMOD_ALT|KMOD_META))
 #define SERRNO strerror(errno)
 #define MIN(a, b)  ((a) < (b) ? (a) : (b))
 #define MAX(a, b)  ((a) < (b) ? (b) : (a))
@@ -198,7 +196,7 @@ typedef struct {
 
 /* Purely graphic info */
 typedef struct {
-	Colormap cmap;
+	//Colormap cmap;
 	SDL_Surface *win;
 	int scr;
 	bool isfixed; /* is fixed geometry? */
@@ -212,8 +210,8 @@ typedef struct {
 } XWindow;
 
 typedef struct {
-	KeySym k;
-	uint mask;
+	SDLKey k;
+	SDLMod mask;
 	char s[ESC_BUF_SIZ];
 } Key;
 
@@ -226,7 +224,7 @@ typedef struct {
 		int x, y;
 	} b, e;
 	char *clip;
-	Atom xtarget;
+	//Atom xtarget;
 	bool alt;
 	struct timeval tclick1;
 	struct timeval tclick2;
@@ -240,8 +238,8 @@ typedef union {
 } Arg;
 
 typedef struct {
-	unsigned int mod;
-	KeySym keysym;
+	SDLMod mod;
+	SDLKey keysym;
 	void (*func)(const Arg *);
 	const Arg arg;
 } Shortcut;
@@ -260,13 +258,13 @@ typedef struct {
 	int descent;
 	short lbearing;
 	short rbearing;
-	XftFont *xft_set;
+	//XftFont *xft_set;
 } Font;
 
 /* Drawing Context */
 typedef struct {
-	XftColor xft_col[LEN(colorname) < 256 ? 256 : LEN(colorname)];
-	GC gc;
+	//XftColor xft_col[LEN(colorname) < 256 ? 256 : LEN(colorname)];
+	//GC gc;
 	Font font, bfont, ifont, ibfont;
 } DC;
 
@@ -331,16 +329,16 @@ static void visibility(SDL_Event *);
 static void unmap(SDL_Event *);
 static char *kmap(SDLKey, SDLMod);
 static void kpress(SDL_Event *);
-static void cmessage(XEvent *);
+static void cmessage(SDL_Event *);
 static void cresize(int width, int height);
 static void resize(SDL_Event *);
 static void focus(SDL_Event *);
 static void brelease(SDL_Event *);
 static void bpress(SDL_Event *);
 static void bmotion(SDL_Event *);
-static void selnotify(XEvent *);
-static void selclear(XEvent *);
-static void selrequest(XEvent *);
+static void selnotify(SDL_Event *);
+static void selclear(SDL_Event *);
+static void selrequest(SDL_Event *);
 
 static void selinit(void);
 static inline bool selected(int, int);
@@ -621,12 +619,12 @@ selected(int x, int y) {
 }
 
 void
-getbuttoninfo(XEvent *e, int *b, int *x, int *y) {
+getbuttoninfo(SDL_Event *e, int *b, int *x, int *y) {
 	if(b)
-		*b = e->xbutton.button;
+		*b = e->button.button;
 
-	*x = x2col(e->xbutton.x);
-	*y = y2row(e->xbutton.y);
+	*x = x2col(e->button.x);
+	*y = y2row(e->button.y);
 
 	sel.b.x = sel.by < sel.ey ? sel.bx : sel.ex;
 	sel.b.y = MIN(sel.by, sel.ey);
@@ -635,11 +633,13 @@ getbuttoninfo(XEvent *e, int *b, int *x, int *y) {
 }
 
 void
-mousereport(XEvent *e) {
-	int x = x2col(e->xbutton.x);
-	int y = y2row(e->xbutton.y);
-	int button = e->xbutton.button;
-	int state = e->xbutton.state;
+mousereport(SDL_Event *e) {
+// TODO
+#if 0
+	int x = x2col(e->button.x);
+	int y = y2row(e->button.y);
+	int button = e->button.button;
+	int state = e->button.state;
 	char buf[] = { '\033', '[', 'M', 0, 32+x+1, 32+y+1 };
 	static int ob, ox, oy;
 
@@ -666,25 +666,23 @@ mousereport(XEvent *e) {
 		+ (state & ControlMask ? 16 : 0);
 
 	ttywrite(buf, sizeof(buf));
+#endif
 }
 
 void
 bpress(SDL_Event *e) {
-// TODO
-#if 0
 	if(IS_SET(MODE_MOUSE)) {
 		mousereport(e);
-	} else if(e->xbutton.button == Button1) {
+	} else if(e->button.button == SDL_BUTTON_LEFT) {
 		if(sel.bx != -1) {
 			sel.bx = -1;
 			tsetdirt(sel.b.y, sel.e.y);
 			draw();
 		}
 		sel.mode = 1;
-		sel.ex = sel.bx = x2col(e->xbutton.x);
-		sel.ey = sel.by = y2row(e->xbutton.y);
+		sel.ex = sel.bx = x2col(e->button.x);
+		sel.ey = sel.by = y2row(e->button.y);
 	}
-#endif
 }
 
 void
@@ -727,7 +725,7 @@ selcopy(void) {
 }
 
 void
-selnotify(XEvent *e) {
+selnotify(SDL_Event *e) {
 (void)e;
 // TODO
 #if 0
@@ -761,7 +759,7 @@ selpaste(void) {
 #endif
 }
 
-void selclear(XEvent *e) {
+void selclear(SDL_Event *e) {
 	(void)e;
 	if(sel.bx == -1)
 		return;
@@ -770,7 +768,7 @@ void selclear(XEvent *e) {
 }
 
 void
-selrequest(XEvent *e) {
+selrequest(SDL_Event *e) {
 (void)e;
 // TODO
 #if 0
@@ -2658,7 +2656,6 @@ kmap(SDLKey k, SDLMod state) {
 	int i;
 	SDLMod mask;
 
-	state &= ~Mod2Mask;
 	for(i = 0; i < LEN(key); i++) {
 		mask = key[i].mask;
 
@@ -2737,7 +2734,7 @@ kpress(SDL_Event *ev) {
 }
 
 void
-cmessage(XEvent *e) {
+cmessage(SDL_Event *e) {
 // TODO
 #if 0
 	/* See xembed specs
@@ -2868,7 +2865,7 @@ main(int argc, char *argv[]) {
 	uint wr, hr;
 
 	xw.fw = xw.fh = xw.fx = xw.fy = 0;
-	xw.isfixed = False;
+	xw.isfixed = false;
 
 	for(i = 1; i < argc; i++) {
 		switch(argv[i][0] != '-' || argv[i][2] ? -1 : argv[i][1]) {
