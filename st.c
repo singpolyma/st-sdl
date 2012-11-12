@@ -2867,7 +2867,12 @@ run(void) {
 		if(handler[ev.type])
 			(handler[ev.type])(&ev);
 
-		draw();
+		switch(ev.type) {
+			case SDL_VIDEORESIZE:
+			case SDL_VIDEOEXPOSE:
+			case SDL_USEREVENT:
+				draw();
+		}
 	}
 
 	SDL_KillThread(thread);
