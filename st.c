@@ -1,3 +1,5 @@
+// TODO: opt_embed, we cannot embed with SDL
+
 /* See LICENSE for licence details. */
 #define _XOPEN_SOURCE 600
 #include <ctype.h>
@@ -28,6 +30,11 @@
 #include <X11/extensions/Xdbe.h>
 #include <X11/Xft/Xft.h>
 #include <fontconfig/fontconfig.h>
+
+#include <SDL/SDL.h>
+#include <SDL/SDL_thread.h>
+#include <SDL/SDL_ttf.h>
+
 #define Glyph Glyph_
 #define Font Font_
 
@@ -197,15 +204,8 @@ typedef struct {
 
 /* Purely graphic info */
 typedef struct {
-	Display* dpy;
 	Colormap cmap;
-	Window win;
-	XdbeBackBuffer buf;
-	Atom xembed, wmdeletewin;
-	XIM xim;
-	XIC xic;
-	XftDraw *xft_draw;
-	Visual *vis;
+	SDL_Surface *win;
 	int scr;
 	bool isfixed; /* is fixed geometry? */
 	int fx, fy, fw, fh; /* fixed geometry */
@@ -323,29 +323,27 @@ static void ttyresize(void);
 static void ttywrite(const char *, size_t);
 
 static void xdraws(char *, Glyph, int, int, int, int);
-static void xhints(void);
 static void xclear(int, int, int, int);
 static void xdrawcursor(void);
 static void xinit(void);
 static void xloadcols(void);
-static void xresettitle(void);
-static void xseturgency(int);
+static void sdlresettitle(void);
 static void xsetsel(char*);
-static void xtermclear(int, int, int, int);
+static void sdltermclear(int, int, int, int);
 static void xresize(int, int);
 
-static void expose(XEvent *);
-static void visibility(XEvent *);
-static void unmap(XEvent *);
-static char *kmap(KeySym, uint);
-static void kpress(XEvent *);
+static void expose(SDL_Event *);
+static void visibility(SDL_Event *);
+static void unmap(SDL_Event *);
+static char *kmap(SDLKey, SDLMod);
+static void kpress(SDL_Event *);
 static void cmessage(XEvent *);
 static void cresize(int width, int height);
-static void resize(XEvent *);
-static void focus(XEvent *);
-static void brelease(XEvent *);
-static void bpress(XEvent *);
-static void bmotion(XEvent *);
+static void resize(SDL_Event *);
+static void focus(SDL_Event *);
+static void brelease(SDL_Event *);
+static void bpress(SDL_Event *);
+static void bmotion(SDL_Event *);
 static void selnotify(XEvent *);
 static void selclear(XEvent *);
 static void selrequest(XEvent *);
@@ -365,22 +363,25 @@ static ssize_t xwrite(int, char *, size_t);
 static void *xmalloc(size_t);
 static void *xrealloc(void *, size_t);
 static void *xcalloc(size_t nmemb, size_t size);
+static void xflip(void);
 
-static void (*handler[LASTEvent])(XEvent *) = {
-	[KeyPress] = kpress,
-	[ClientMessage] = cmessage,
-	[ConfigureNotify] = resize,
+static void (*handler[SDL_NUMEVENTS])(SDL_Event *) = {
+	[SDL_KEYDOWN] = kpress,
+	[SDL_VIDEORESIZE] = resize,
+#if 0
 	[VisibilityNotify] = visibility,
 	[UnmapNotify] = unmap,
-	[Expose] = expose,
-	[FocusIn] = focus,
-	[FocusOut] = focus,
-	[MotionNotify] = bmotion,
-	[ButtonPress] = bpress,
-	[ButtonRelease] = brelease,
+#endif
+	[SDL_VIDEOEXPOSE] = expose,
+	[SDL_ACTIVEEVENT] = focus,
+	[SDL_MOUSEMOTION] = bmotion,
+	[SDL_MOUSEBUTTONDOWN] = bpress,
+	[SDL_MOUSEBUTTONUP] = brelease,
+#if 0
 	[SelectionClear] = selclear,
 	[SelectionNotify] = selnotify,
 	[SelectionRequest] = selrequest,
+#endif
 };
 
 /* Globals */
@@ -402,6 +403,7 @@ static char *opt_font = NULL;
 
 static char *usedfont = NULL;
 static int usedfontsize = 0;
+static TTF_Font *drawfont;
 
 ssize_t
 xwrite(int fd, char *s, size_t len) {
@@ -443,6 +445,14 @@ xcalloc(size_t nmemb, size_t size) {
 		die("Out of memory\n");
 
 	return p;
+}
+
+void
+xflip(void) {
+	if(SDL_Flip(xw.win)) {
+		fputs("FLIP ERROR\n", stderr);
+		exit(EXIT_FAILURE);
+	}
 }
 
 int
@@ -571,6 +581,8 @@ utf8size(char *s) {
 
 void
 selinit(void) {
+// TODO
+#if 0
 	memset(&sel.tclick1, 0, sizeof(sel.tclick1));
 	memset(&sel.tclick2, 0, sizeof(sel.tclick2));
 	sel.mode = 0;
@@ -579,6 +591,7 @@ selinit(void) {
 	sel.xtarget = XInternAtom(xw.dpy, "UTF8_STRING", 0);
 	if(sel.xtarget == None)
 		sel.xtarget = XA_STRING;
+#endif
 }
 
 static int
@@ -662,7 +675,9 @@ mousereport(XEvent *e) {
 }
 
 void
-bpress(XEvent *e) {
+bpress(SDL_Event *e) {
+// TODO
+#if 0
 	if(IS_SET(MODE_MOUSE)) {
 		mousereport(e);
 	} else if(e->xbutton.button == Button1) {
@@ -675,6 +690,7 @@ bpress(XEvent *e) {
 		sel.ex = sel.bx = x2col(e->xbutton.x);
 		sel.ey = sel.by = y2row(e->xbutton.y);
 	}
+#endif
 }
 
 void
@@ -718,6 +734,9 @@ selcopy(void) {
 
 void
 selnotify(XEvent *e) {
+(void)e;
+// TODO
+#if 0
 	ulong nitems, ofs, rem;
 	int format;
 	uchar *data;
@@ -736,15 +755,20 @@ selnotify(XEvent *e) {
 		/* number of 32-bit chunks returned */
 		ofs += nitems * format / 32;
 	} while(rem > 0);
+#endif
 }
 
 void
 selpaste(void) {
+// TODO
+#if 0
 	XConvertSelection(xw.dpy, XA_PRIMARY, sel.xtarget, XA_PRIMARY,
 			xw.win, CurrentTime);
+#endif
 }
 
 void selclear(XEvent *e) {
+	(void)e;
 	if(sel.bx == -1)
 		return;
 	sel.bx = -1;
@@ -753,6 +777,9 @@ void selclear(XEvent *e) {
 
 void
 selrequest(XEvent *e) {
+(void)e;
+// TODO
+#if 0
 	XSelectionRequestEvent *xsre;
 	XSelectionEvent xev;
 	Atom xa_targets, string;
@@ -784,10 +811,14 @@ selrequest(XEvent *e) {
 	/* all done, send a notification to the listener */
 	if(!XSendEvent(xsre->display, xsre->requestor, True, 0, (XEvent *) &xev))
 		fprintf(stderr, "Error sending SelectionNotify event\n");
+#endif
 }
 
 void
 xsetsel(char *str) {
+(void)str;
+// TODO
+# if 0
 	/* register the selection for both the clipboard and the primary */
 	Atom clipboard;
 
@@ -798,10 +829,13 @@ xsetsel(char *str) {
 
 	clipboard = XInternAtom(xw.dpy, "CLIPBOARD", 0);
 	XSetSelectionOwner(xw.dpy, clipboard, xw.win, CurrentTime);
+#endif
 }
 
 void
-brelease(XEvent *e) {
+brelease(SDL_Event *e) {
+// TODO
+#if 0
 	struct timeval now;
 
 	if(IS_SET(MODE_MOUSE)) {
@@ -848,10 +882,13 @@ brelease(XEvent *e) {
 
 	memcpy(&sel.tclick2, &sel.tclick1, sizeof(struct timeval));
 	gettimeofday(&sel.tclick1, NULL);
+#endif
 }
 
 void
-bmotion(XEvent *e) {
+bmotion(SDL_Event *e) {
+// TODO
+# if 0
 	int starty, endy, oldey, oldex;
 
 	if(IS_SET(MODE_MOUSE)) {
@@ -870,6 +907,7 @@ bmotion(XEvent *e) {
 			tsetdirt(starty, endy);
 		}
 	}
+#endif
 }
 
 void
@@ -1749,11 +1787,11 @@ strhandle(void) {
 			 * TODO: Handle special chars in string, like umlauts.
 			 */
 			if(p[1] == ';') {
-				XStoreName(xw.dpy, xw.win, strescseq.buf+2);
+				SDL_WM_SetCaption(strescseq.buf+2, NULL);
 			}
 			break;
 		case ';':
-			XStoreName(xw.dpy, xw.win, strescseq.buf+1);
+			SDL_WM_SetCaption(strescseq.buf+1, NULL);
 			break;
 		case '4': /* TODO: Set color (arg0) to "rgb:%hexr/$hexg/$hexb" (arg1) */
 			break;
@@ -1764,7 +1802,7 @@ strhandle(void) {
 		}
 		break;
 	case 'k': /* old title set compatibility */
-		XStoreName(xw.dpy, xw.win, strescseq.buf);
+		SDL_WM_SetCaption(strescseq.buf, NULL);
 		break;
 	case 'P': /* DSC -- Device Control String */
 	case '_': /* APC -- Application Program Command */
@@ -1890,8 +1928,10 @@ tputc(char *c, int len) {
 			tnewline(IS_SET(MODE_CRLF));
 			return;
 		case '\a':	/* BEL */
+#if 0
 			if(!(xw.state & WIN_FOCUSED))
 				xseturgency(1);
+#endif
 			return;
 		case '\033':	/* ESC */
 			csireset();
@@ -2011,7 +2051,7 @@ tputc(char *c, int len) {
 			case 'c': /* RIS -- Reset to inital state */
 				treset();
 				term.esc = 0;
-				xresettitle();
+				sdlresettitle();
 				break;
 			case '=': /* DECPAM -- Application keypad */
 				term.mode |= MODE_APPKEYPAD;
@@ -2136,12 +2176,12 @@ void
 xresize(int col, int row) {
 	xw.tw = MAX(1, 2*borderpx + col * xw.cw);
 	xw.th = MAX(1, 2*borderpx + row * xw.ch);
-
-	XftDrawChange(xw.xft_draw, xw.buf);
 }
 
 void
 xloadcols(void) {
+// TODO
+#if 0
 	int i, r, g, b;
 	XRenderColor xft_color = { .alpha = 0 };
 
@@ -2176,16 +2216,21 @@ xloadcols(void) {
 			die("Could not allocate color %d\n", i);
 		}
 	}
+#endif
 }
 
 void
-xtermclear(int col1, int row1, int col2, int row2) {
-	XftDrawRect(xw.xft_draw,
-			&dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg],
-			borderpx + col1 * xw.cw,
-			borderpx + row1 * xw.ch,
-			(col2-col1+1) * xw.cw,
-			(row2-row1+1) * xw.ch);
+sdltermclear(int col1, int row1, int col2, int row2) {
+	SDL_Rect r = {
+		borderpx + col1 * xw.cw,
+		borderpx + row1 * xw.ch,
+		(col2-col1+1) * xw.cw,
+		(row2-row1+1) * xw.ch
+	};
+
+	// TODO
+	//SDL_FillRect(xw.win, &r, dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg]);
+	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
 }
 
 /*
@@ -2193,62 +2238,21 @@ xtermclear(int col1, int row1, int col2, int row2) {
  */
 void
 xclear(int x1, int y1, int x2, int y2) {
-	XftDrawRect(xw.xft_draw,
-			&dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg],
-			x1, y1, x2-x1, y2-y1);
-}
+	SDL_Rect r = { x1, y1, x2-x1, y2-y1 };
 
-void
-xhints(void) {
-	XClassHint class = {opt_class ? opt_class : termname, termname};
-	XWMHints wm = {.flags = InputHint, .input = 1};
-	XSizeHints *sizeh = NULL;
-
-	sizeh = XAllocSizeHints();
-	if(xw.isfixed == False) {
-		sizeh->flags = PSize | PResizeInc | PBaseSize;
-		sizeh->height = xw.h;
-		sizeh->width = xw.w;
-		sizeh->height_inc = xw.ch;
-		sizeh->width_inc = xw.cw;
-		sizeh->base_height = 2*borderpx;
-		sizeh->base_width = 2*borderpx;
-	} else {
-		sizeh->flags = PMaxSize | PMinSize;
-		sizeh->min_width = sizeh->max_width = xw.fw;
-		sizeh->min_height = sizeh->max_height = xw.fh;
-	}
-
-	XSetWMProperties(xw.dpy, xw.win, NULL, NULL, NULL, 0, sizeh, &wm, &class);
-	XFree(sizeh);
-}
-
-int
-xloadfont(Font *f, FcPattern *pattern) {
-	FcPattern *match;
-	FcResult result;
-
-	match = XftFontMatch(xw.dpy, xw.scr, pattern, &result);
-	if(!match)
-		return 1;
-	if(!(f->xft_set = XftFontOpenPattern(xw.dpy, match))) {
-		FcPatternDestroy(match);
-		return 1;
-	}
-
-	f->ascent = f->xft_set->ascent;
-	f->descent = f->xft_set->descent;
-	f->lbearing = 0;
-	f->rbearing = f->xft_set->max_advance_width;
-
-	f->height = f->xft_set->height;
-	f->width = f->lbearing + f->rbearing;
-
-	return 0;
+	// TODO
+	//SDL_FillRect(xw.win, &r, dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg]);
+	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
 }
 
 void
 xloadfonts(char *fontstr, int fontsize) {
+if(!fontsize) fontsize = 15;
+
+drawfont = TTF_OpenFont("./ProggySquareSZ.ttf", fontsize);
+TTF_SizeUTF8(drawfont, "O", &xw.cw, &xw.ch);
+//TODO
+#if 0
 	FcPattern *pattern;
 	FcResult result;
 	double fontval;
@@ -2302,6 +2306,7 @@ xloadfonts(char *fontstr, int fontsize) {
 		die("st: can't open font %s\n", fontstr);
 
 	FcPatternDestroy(pattern);
+#endif
 }
 
 void
@@ -2313,33 +2318,51 @@ xzoom(const Arg *arg)
 }
 
 void
-xinit(void) {
-	XSetWindowAttributes attrs;
-	Cursor cursor;
-	Window parent;
-	int sw, sh, major, minor;
+sdlinit(void) {
+	int major, minor;
+	SDL_VideoInfo *vi;
 
-	if(!(xw.dpy = XOpenDisplay(NULL)))
-		die("Can't open display\n");
-	xw.scr = XDefaultScreen(xw.dpy);
-	xw.vis = XDefaultVisual(xw.dpy, xw.scr);
+	// TODO: not everything
+	if(SDL_Init(SDL_INIT_EVERYTHING) == -1) {
+		fprintf(stderr,"Unable to initialize SDL: %s\n", SDL_GetError());
+		exit(EXIT_FAILURE);
+	}
+
+	SDL_EnableUNICODE(1);
+
+	if(TTF_Init() == -1) {
+		printf("TTF_Init: %s\n", TTF_GetError());
+		exit(EXIT_FAILURE);
+	}
+
+	if(atexit(TTF_Quit)) {
+		fprintf(stderr,"Unable to register TTF_Quit atexit\n");
+	}
+
+	if(atexit(SDL_Quit)) {
+		fprintf(stderr,"Unable to register SDL_Quit atexit\n");
+	}
+
+	vi = SDL_GetVideoInfo();
 
 	/* font */
+// TODO
 	usedfont = (opt_font == NULL)? font : opt_font;
 	xloadfonts(usedfont, 0);
 
+// TODO: SDL_SetColors ?
+#if 0
 	/* colors */
 	xw.cmap = XDefaultColormap(xw.dpy, xw.scr);
 	xloadcols();
+#endif
 
 	/* adjust fixed window geometry */
 	if(xw.isfixed) {
-		sw = DisplayWidth(xw.dpy, xw.scr);
-		sh = DisplayHeight(xw.dpy, xw.scr);
 		if(xw.fx < 0)
-			xw.fx = sw + xw.fx - xw.fw - 1;
+			xw.fx = vi->current_w + xw.fx - xw.fw - 1;
 		if(xw.fy < 0)
-			xw.fy = sh + xw.fy - xw.fh - 1;
+			xw.fy = vi->current_h + xw.fy - xw.fh - 1;
 
 		xw.h = xw.fh;
 		xw.w = xw.fw;
@@ -2351,57 +2374,45 @@ xinit(void) {
 		xw.fy = 0;
 	}
 
-	attrs.background_pixel = dc.xft_col[defaultbg].pixel;
-	attrs.border_pixel = dc.xft_col[defaultbg].pixel;
-	attrs.bit_gravity = NorthWestGravity;
-	attrs.event_mask = FocusChangeMask | KeyPressMask
-		| ExposureMask | VisibilityChangeMask | StructureNotifyMask
-		| ButtonMotionMask | ButtonPressMask | ButtonReleaseMask;
-	attrs.colormap = xw.cmap;
+	// TODO attrs.background_pixel = dc.xft_col[defaultbg].pixel;
+	// TODO attrs.colormap = xw.cmap;
 
-	parent = opt_embed ? strtol(opt_embed, NULL, 0) : XRootWindow(xw.dpy, xw.scr);
-	xw.win = XCreateWindow(xw.dpy, parent, xw.fx, xw.fy,
-			xw.w, xw.h, 0, XDefaultDepth(xw.dpy, xw.scr), InputOutput,
-			xw.vis,
-			CWBackPixel | CWBorderPixel | CWBitGravity | CWEventMask
-			| CWColormap,
-			&attrs);
-
-	/* double buffering */
-	if(!XdbeQueryExtension(xw.dpy, &major, &minor))
-		die("Xdbe extension is not present\n");
-	xw.buf = XdbeAllocateBackBufferName(xw.dpy, xw.win, XdbeCopied);
-
-	/* Xft rendering context */
-	xw.xft_draw = XftDrawCreate(xw.dpy, xw.buf, xw.vis, xw.cmap);
-
-	/* input methods */
-	xw.xim = XOpenIM(xw.dpy, NULL, NULL, NULL);
-	xw.xic = XCreateIC(xw.xim, XNInputStyle, XIMPreeditNothing
-					   | XIMStatusNothing, XNClientWindow, xw.win,
-					   XNFocusWindow, xw.win, NULL);
-	/* gc */
-	dc.gc = XCreateGC(xw.dpy, xw.win, 0, NULL);
+	if(!(xw.win = SDL_SetVideoMode(xw.w, xw.h, 16, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_RESIZABLE))) {
+		fprintf(stderr,"Unable to set video mode: %s\n", SDL_GetError());
+		exit(EXIT_FAILURE);
+	}
 
 	/* white cursor, black outline */
+// TODO
+#if 0
 	cursor = XCreateFontCursor(xw.dpy, XC_xterm);
 	XDefineCursor(xw.dpy, xw.win, cursor);
 	XRecolorCursor(xw.dpy, cursor,
 		&(XColor){.red = 0xffff, .green = 0xffff, .blue = 0xffff},
 		&(XColor){.red = 0x0000, .green = 0x0000, .blue = 0x0000});
+#endif
 
-	xw.xembed = XInternAtom(xw.dpy, "_XEMBED", False);
-	xw.wmdeletewin = XInternAtom(xw.dpy, "WM_DELETE_WINDOW", False);
-	XSetWMProtocols(xw.dpy, xw.win, &xw.wmdeletewin, 1);
-
-	xresettitle();
-	XMapWindow(xw.dpy, xw.win);
-	xhints();
-	XSync(xw.dpy, 0);
+	sdlresettitle();
+	expose(NULL);
 }
 
 void
 xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
+int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch;
+SDL_Surface *text_surface;
+SDL_Color color={255,255,255};
+SDL_Rect r = {winx, winy, charlen * xw.cw, xw.ch};
+SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
+if(!(text_surface=TTF_RenderUTF8_Solid(drawfont,s,color))) {
+	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
+	exit(EXIT_FAILURE);
+} else {
+	SDL_BlitSurface(text_surface,NULL,xw.win,&r);
+	SDL_FreeSurface(text_surface);
+}
+
+// TODO
+#if 0
 	int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch,
 	    width = charlen * xw.cw;
 	Font *font = &dc.font;
@@ -2488,6 +2499,7 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 		XftDrawRect(xw.xft_draw, fg, winx, winy + font->ascent + 1,
 				width, 1);
 	}
+#endif
 }
 
 void
@@ -2508,7 +2520,7 @@ xdrawcursor(void) {
 		xdraws(term.line[oldy][oldx].c, term.line[oldy][oldx], oldx,
 				oldy, 1, sl);
 	} else {
-		xtermclear(oldx, oldy, oldx, oldy);
+		sdltermclear(oldx, oldy, oldx, oldy);
 	}
 
 	/* draw the new one */
@@ -2526,8 +2538,8 @@ xdrawcursor(void) {
 }
 
 void
-xresettitle(void) {
-	XStoreName(xw.dpy, xw.win, opt_title ? opt_title : "st");
+sdlresettitle(void) {
+	SDL_WM_SetCaption(opt_title ? opt_title : "st", NULL);
 }
 
 void
@@ -2536,16 +2548,13 @@ redraw(void) {
 
 	tfulldirt();
 	draw();
-	XSync(xw.dpy, False); /* necessary for a good tput flash */
 	nanosleep(&tv, NULL);
 }
 
 void
 draw(void) {
-	XdbeSwapInfo swpinfo[1] = {{xw.win, XdbeCopied}};
-
 	drawregion(0, 0, term.col, term.row);
-	XdbeSwapBuffers(xw.dpy, swpinfo, 1);
+	xflip();
 }
 
 void
@@ -2564,7 +2573,7 @@ drawregion(int x1, int y1, int x2, int y2) {
 		if(!term.dirty[y])
 			continue;
 
-		xtermclear(0, y, term.col, y);
+		sdltermclear(0, y, term.col, y);
 		term.dirty[y] = 0;
 		base = term.line[y][0];
 		ic = ib = ox = 0;
@@ -2596,17 +2605,15 @@ drawregion(int x1, int y1, int x2, int y2) {
 }
 
 void
-expose(XEvent *ev) {
-	XExposeEvent *e = &ev->xexpose;
-
-	if(xw.state & WIN_REDRAW) {
-		if(!e->count)
-			xw.state &= ~WIN_REDRAW;
-	}
+expose(SDL_Event *ev) {
+	(void)ev;
+	xw.state |= WIN_VISIBLE | WIN_REDRAW;
 }
 
 void
-visibility(XEvent *ev) {
+visibility(SDL_Event *ev) {
+// TODO
+#if 0
 	XVisibilityEvent *e = &ev->xvisibility;
 
 	if(e->state == VisibilityFullyObscured) {
@@ -2615,45 +2622,42 @@ visibility(XEvent *ev) {
 		/* need a full redraw for next Expose, not just a buf copy */
 		xw.state |= WIN_VISIBLE | WIN_REDRAW;
 	}
+#endif
 }
 
 void
-unmap(XEvent *ev) {
+unmap(SDL_Event *ev) {
 	xw.state &= ~WIN_VISIBLE;
 }
 
 void
-xseturgency(int add) {
-	XWMHints *h = XGetWMHints(xw.dpy, xw.win);
-
-	h->flags = add ? (h->flags | XUrgencyHint) : (h->flags & ~XUrgencyHint);
-	XSetWMHints(xw.dpy, xw.win, h);
-	XFree(h);
-}
-
-void
-focus(XEvent *ev) {
+focus(SDL_Event *ev) {
+// TODO
+#if 0
 	if(ev->type == FocusIn) {
 		XSetICFocus(xw.xic);
 		xw.state |= WIN_FOCUSED;
+#if 0
 		xseturgency(0);
+#endif
 	} else {
 		XUnsetICFocus(xw.xic);
 		xw.state &= ~WIN_FOCUSED;
 	}
+#endif
 }
 
 char*
-kmap(KeySym k, uint state) {
+kmap(SDLKey k, SDLMod state) {
 	int i;
-	uint mask;
+	SDLMod mask;
 
 	state &= ~Mod2Mask;
 	for(i = 0; i < LEN(key); i++) {
 		mask = key[i].mask;
 
 		if(key[i].k == k && ((state & mask) == mask
-				|| (mask == XK_NO_MOD && !state))) {
+				|| (mask == 0 && !state))) {
 			return (char*)key[i].s;
 		}
 	}
@@ -2661,19 +2665,17 @@ kmap(KeySym k, uint state) {
 }
 
 void
-kpress(XEvent *ev) {
-	XKeyEvent *e = &ev->xkey;
-	KeySym ksym;
+kpress(SDL_Event *ev) {
+	SDL_KeyboardEvent *e = &ev->key;
 	char buf[32], *customkey;
-	int len, meta, shift, i;
-	Status status;
+	int meta, shift, i;
+	SDLKey ksym = e->keysym.sym;
 
 	if (IS_SET(MODE_KBDLOCK))
 		return;
 
-	meta = e->state & Mod1Mask;
-	shift = e->state & ShiftMask;
-	len = XmbLookupString(xw.xic, e, buf, sizeof(buf), &ksym, &status);
+	meta = e->keysym.mod & KMOD_ALT;
+	shift = e->keysym.mod & KMOD_SHIFT;
 
 	/* 1. shortcuts */
 	for(i = 0; i < LEN(shortcuts); i++) {
@@ -2686,26 +2688,26 @@ kpress(XEvent *ev) {
 	}
 
 	/* 2. custom keys from config.h */
-	if((customkey = kmap(ksym, e->state))) {
+	if((customkey = kmap(ksym, e->keysym.mod))) {
 		ttywrite(customkey, strlen(customkey));
 	/* 2. hardcoded (overrides X lookup) */
 	} else {
 		switch(ksym) {
-		case XK_Up:
-		case XK_Down:
-		case XK_Left:
-		case XK_Right:
+		case SDLK_UP:
+		case SDLK_DOWN:
+		case SDLK_LEFT:
+		case SDLK_RIGHT:
 			/* XXX: shift up/down doesn't work */
 			sprintf(buf, "\033%c%c",
 				IS_SET(MODE_APPKEYPAD) ? 'O' : '[',
-				(shift ? "dacb":"DACB")[ksym - XK_Left]);
+				(shift ? "dacb":"DACB")[ksym - SDLK_LEFT]); // TODO
 			ttywrite(buf, 3);
 			break;
-		case XK_Insert:
+		case SDLK_INSERT:
 			if(shift)
 				selpaste();
 			break;
-		case XK_Return:
+		case SDLK_RETURN:
 			if(meta)
 				ttywrite("\033", 1);
 
@@ -2717,10 +2719,11 @@ kpress(XEvent *ev) {
 			break;
 			/* 3. X lookup  */
 		default:
-			if(len > 0) {
-				if(meta && len == 1)
+			if(e->keysym.unicode) {
+				if(meta && e->keysym.unicode <= 127)
 					ttywrite("\033", 1);
-				ttywrite(buf, len);
+				buf[0] = e->keysym.unicode & 0x7F; // TODO UTF-8
+				ttywrite(buf, 1);
 			}
 			break;
 		}
@@ -2729,12 +2732,16 @@ kpress(XEvent *ev) {
 
 void
 cmessage(XEvent *e) {
+// TODO
+#if 0
 	/* See xembed specs
 	   http://standards.freedesktop.org/xembed-spec/xembed-spec-latest.html */
 	if(e->xclient.message_type == xw.xembed && e->xclient.format == 32) {
 		if(e->xclient.data.l[1] == XEMBED_FOCUS_IN) {
 			xw.state |= WIN_FOCUSED;
+#if 0
 			xseturgency(0);
+#endif
 		} else if(e->xclient.data.l[1] == XEMBED_FOCUS_OUT) {
 			xw.state &= ~WIN_FOCUSED;
 		}
@@ -2743,6 +2750,7 @@ cmessage(XEvent *e) {
 		kill(pid, SIGHUP);
 		exit(EXIT_SUCCESS);
 	}
+#endif
 }
 
 void
@@ -2758,31 +2766,37 @@ cresize(int width, int height)
 	col = (xw.w - 2*borderpx) / xw.cw;
 	row = (xw.h - 2*borderpx) / xw.ch;
 
+	xw.win = SDL_SetVideoMode(xw.w, xw.h, 16, SDL_HWSURFACE |
+SDL_DOUBLEBUF | SDL_RESIZABLE);
 	tresize(col, row);
 	xresize(col, row);
 	ttyresize();
 }
 
 void
-resize(XEvent *e) {
-	if(e->xconfigure.width == xw.w && e->xconfigure.height == xw.h)
+resize(SDL_Event *e) {
+	if(e->resize.w == xw.w && e->resize.h == xw.h)
 		return;
 
-	cresize(e->xconfigure.width, e->xconfigure.height);
+	cresize(e->resize.w, e->resize.h);
 }
 
-void
-run(void) {
-	XEvent ev;
+int ttythread(void *unused) {
+	int i;
 	fd_set rfd;
-	int xfd = XConnectionNumber(xw.dpy), i;
 	struct timeval drawtimeout, *tv = NULL;
+	SDL_Event event;
+	(void)unused;
+
+	event.type = SDL_USEREVENT;
+	event.user.code = 0;
+	event.user.data1 = NULL;
+	event.user.data2 = NULL;
 
 	for(i = 0;; i++) {
 		FD_ZERO(&rfd);
 		FD_SET(cmdfd, &rfd);
-		FD_SET(xfd, &rfd);
-		if(select(MAX(xfd, cmdfd)+1, &rfd, NULL, NULL, tv) < 0) {
+		if(select(cmdfd+1, &rfd, NULL, NULL, tv) < 0) {
 			if(errno == EINTR)
 				continue;
 			die("select failed: %s\n", SERRNO);
@@ -2807,17 +2821,34 @@ run(void) {
 		i = 0;
 		tv = NULL;
 
-		while(XPending(xw.dpy)) {
-			XNextEvent(xw.dpy, &ev);
-			if(XFilterEvent(&ev, None))
-				continue;
-			if(handler[ev.type])
-				(handler[ev.type])(&ev);
+		if(SDL_PushEvent(&event)) {
+			fputs("Warning: unable to push tty update event.\n", stderr);
 		}
+	}
+
+	return 0;
+}
+
+void
+run(void) {
+	SDL_Event ev;
+	SDL_Thread *thread;
+
+	if(!(thread = SDL_CreateThread(ttythread, NULL))) {
+		fprintf(stderr, "Unable to create thread: %s\n", SDL_GetError());
+		exit(EXIT_FAILURE);
+	}
+
+	while(SDL_WaitEvent(&ev)) {
+		if(ev.type == SDL_QUIT) break;
+
+		if(handler[ev.type])
+			(handler[ev.type])(&ev);
 
 		draw();
-		XFlush(xw.dpy);
 	}
+
+	SDL_KillThread(thread);
 }
 
 int
@@ -2843,6 +2874,7 @@ main(int argc, char *argv[]) {
 			if(++i < argc)
 				opt_font = argv[i];
 			break;
+#if 0
 		case 'g':
 			if(++i >= argc)
 				break;
@@ -2864,6 +2896,7 @@ main(int argc, char *argv[]) {
 			if(xw.fh != 0 && xw.fw != 0)
 				xw.isfixed = True;
 			break;
+#endif
 		case 'o':
 			if(++i < argc)
 				opt_io = argv[i];
@@ -2884,9 +2917,8 @@ main(int argc, char *argv[]) {
 
 run:
 	setlocale(LC_CTYPE, "");
-	XSetLocaleModifiers("");
 	tnew(80, 24);
-	xinit();
+	sdlinit();
 	ttynew();
 	selinit();
 	run();

@@ -16,8 +16,8 @@ LIBS = -L/usr/lib -lc -L${X11LIB} -lX11 -lutil -lXext -lXft -lfontconfig
 
 # flags
 CPPFLAGS = -DVERSION=\"${VERSION}\"
-CFLAGS += -g -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
-LDFLAGS += -g ${LIBS}
+CFLAGS += -g -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS} `sdl-config --cflags`
+LDFLAGS += -g ${LIBS} `sdl-config --libs` -lSDL_ttf
 
 # compiler and linker
 CC ?= cc
