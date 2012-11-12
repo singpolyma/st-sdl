@@ -2400,10 +2400,30 @@ sdlinit(void) {
 
 void
 xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
-int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch;
+int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch,
+	width = charlen * xw.cw;
 SDL_Surface *text_surface;
 SDL_Color color={255,255,255};
-SDL_Rect r = {winx, winy, charlen * xw.cw, xw.ch};
+SDL_Rect r = {winx, winy, width, xw.ch};
+
+s[bytelen] = '\0';
+
+	/* Intelligent cleaning up of the borders. */
+	if(x == 0) {
+		xclear(0, (y == 0)? 0 : winy, borderpx,
+			winy + xw.ch + (y == term.row-1)? xw.h : 0);
+	}
+	if(x + charlen >= term.col-1) {
+		xclear(winx + width, (y == 0)? 0 : winy, xw.w,
+			(y == term.row-1)? xw.h : (winy + xw.ch));
+	}
+	if(y == 0)
+		xclear(winx, 0, winx + width, borderpx);
+	if(y == term.row-1)
+		xclear(winx, winy + xw.ch, winx + width, xw.h);
+
+
+
 SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
 if(!(text_surface=TTF_RenderUTF8_Solid(drawfont,s,color))) {
 	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
