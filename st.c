@@ -244,23 +244,10 @@ static void xzoom(const Arg *);
 /* Config.h for applying patches and the configuration. */
 #include "config.h"
 
-/* Font structure */
-typedef struct {
-	int height;
-	int width;
-	int ascent;
-	int descent;
-	short lbearing;
-	short rbearing;
-	//XftFont *xft_set;
-	TTF_Font *font; // TODO ?
-} Font;
-
 /* Drawing Context */
 typedef struct {
 	SDL_Color colors[LEN(colormap) < 256 ? 256 : LEN(colormap)];
-	Font font;
-	//Font font, bfont, ifont, ibfont;
+	TTF_Font *font;
 } DC;
 
 static void die(const char *, ...);
@@ -385,7 +372,6 @@ static char *opt_font = NULL;
 
 static char *usedfont = NULL;
 static int usedfontsize = 0;
-static TTF_Font *drawfont;
 
 ssize_t
 xwrite(int fd, char *s, size_t len) {
@@ -2207,8 +2193,8 @@ void
 xloadfonts(char *fontstr, int fontsize) {
 if(!fontsize) fontsize = 15;
 
-drawfont = TTF_OpenFont("./LiberationMono-Regular.ttf", fontsize);
-TTF_SizeUTF8(drawfont, "O", &xw.cw, &xw.ch);
+dc.font = TTF_OpenFont("./LiberationMono-Regular.ttf", fontsize);
+TTF_SizeUTF8(dc.font, "O", &xw.cw, &xw.ch);
 //TODO
 #if 0
 	FcPattern *pattern;
@@ -2368,7 +2354,7 @@ s[bytelen] = '\0';
 
 
 SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, bg.r, bg.g, bg.b));
-if(!(text_surface=TTF_RenderUTF8_Solid(drawfont,s,color))) {
+if(!(text_surface=TTF_RenderUTF8_Solid(dc.font,s,color))) {
 	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
 	exit(EXIT_FAILURE);
 } else {
