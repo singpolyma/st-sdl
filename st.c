@@ -1,5 +1,3 @@
-// TODO: opt_embed, we cannot embed with SDL
-
 /* See LICENSE for licence details. */
 #define _XOPEN_SOURCE 600
 #include <ctype.h>
@@ -41,11 +39,7 @@
 #define USAGE \
 	"st " VERSION " (c) 2010-2012 st engineers\n" \
 	"usage: st [-v] [-c class] [-f font] [-g geometry] [-o file]" \
-	" [-t title] [-w windowid] [-e command ...]\n"
-
-/* XEMBED messages */
-#define XEMBED_FOCUS_IN  4
-#define XEMBED_FOCUS_OUT 5
+	" [-t title] [-e command ...]\n"
 
 /* Arbitrary sizes */
 #define ESC_BUF_SIZ   256
@@ -329,10 +323,10 @@ static void visibility(SDL_Event *);
 static void unmap(SDL_Event *);
 static char *kmap(SDLKey, SDLMod);
 static void kpress(SDL_Event *);
-static void cmessage(SDL_Event *);
 static void cresize(int width, int height);
 static void resize(SDL_Event *);
 static void focus(SDL_Event *);
+static void activeEvent(SDL_Event *);
 static void brelease(SDL_Event *);
 static void bpress(SDL_Event *);
 static void bmotion(SDL_Event *);
@@ -360,12 +354,8 @@ static void xflip(void);
 static void (*handler[SDL_NUMEVENTS])(SDL_Event *) = {
 	[SDL_KEYDOWN] = kpress,
 	[SDL_VIDEORESIZE] = resize,
-#if 0
-	[VisibilityNotify] = visibility,
-	[UnmapNotify] = unmap,
-#endif
 	[SDL_VIDEOEXPOSE] = expose,
-	[SDL_ACTIVEEVENT] = focus,
+	[SDL_ACTIVEEVENT] = activeEvent,
 	[SDL_MOUSEMOTION] = bmotion,
 	[SDL_MOUSEBUTTONDOWN] = bpress,
 	[SDL_MOUSEBUTTONUP] = brelease,
@@ -389,7 +379,6 @@ static int iofd = -1;
 static char **opt_cmd = NULL;
 static char *opt_io = NULL;
 static char *opt_title = NULL;
-static char *opt_embed = NULL;
 static char *opt_class = NULL;
 static char *opt_font = NULL;
 
@@ -826,8 +815,6 @@ xsetsel(char *str) {
 
 void
 brelease(SDL_Event *e) {
-// TODO
-#if 0
 	struct timeval now;
 
 	if(IS_SET(MODE_MOUSE)) {
@@ -835,9 +822,9 @@ brelease(SDL_Event *e) {
 		return;
 	}
 
-	if(e->xbutton.button == Button2) {
+	if(e->button.button == SDL_BUTTON_MIDDLE) {
 		selpaste();
-	} else if(e->xbutton.button == Button1) {
+	} else if(e->button.button == SDL_BUTTON_LEFT) {
 		sel.mode = 0;
 		getbuttoninfo(e, NULL, &sel.ex, &sel.ey);
 		term.dirty[sel.ey] = 1;
@@ -874,13 +861,10 @@ brelease(SDL_Event *e) {
 
 	memcpy(&sel.tclick2, &sel.tclick1, sizeof(struct timeval));
 	gettimeofday(&sel.tclick1, NULL);
-#endif
 }
 
 void
 bmotion(SDL_Event *e) {
-// TODO
-# if 0
 	int starty, endy, oldey, oldex;
 
 	if(IS_SET(MODE_MOUSE)) {
@@ -899,7 +883,6 @@ bmotion(SDL_Event *e) {
 			tsetdirt(starty, endy);
 		}
 	}
-#endif
 }
 
 void
@@ -2172,6 +2155,7 @@ xresize(int col, int row) {
 
 void
 xloadcols(void) {
+// TODO: SDL_SetColors ?
 // TODO
 #if 0
 	int i, r, g, b;
@@ -2338,16 +2322,11 @@ sdlinit(void) {
 	vi = SDL_GetVideoInfo();
 
 	/* font */
-// TODO
 	usedfont = (opt_font == NULL)? font : opt_font;
 	xloadfonts(usedfont, 0);
 
-// TODO: SDL_SetColors ?
-#if 0
 	/* colors */
-	xw.cmap = XDefaultColormap(xw.dpy, xw.scr);
 	xloadcols();
-#endif
 
 	/* adjust fixed window geometry */
 	if(xw.isfixed) {
@@ -2607,6 +2586,19 @@ drawregion(int x1, int y1, int x2, int y2) {
 	xdrawcursor();
 }
 
+void activeEvent(SDL_Event *ev) {
+	switch(ev->active.type) {
+		case SDL_APPACTIVE:
+			visibility(ev);
+			if(!ev->active.gain) unmap(ev);
+			break;
+		case SDL_APPMOUSEFOCUS:
+		case SDL_APPINPUTFOCUS:
+			focus(ev);
+			break;
+	}
+}
+
 void
 expose(SDL_Event *ev) {
 	(void)ev;
@@ -2615,17 +2607,14 @@ expose(SDL_Event *ev) {
 
 void
 visibility(SDL_Event *ev) {
-// TODO
-#if 0
-	XVisibilityEvent *e = &ev->xvisibility;
+	SDL_ActiveEvent *e = &ev->active;
 
-	if(e->state == VisibilityFullyObscured) {
+	if(!e->gain) {
 		xw.state &= ~WIN_VISIBLE;
 	} else if(!(xw.state & WIN_VISIBLE)) {
 		/* need a full redraw for next Expose, not just a buf copy */
 		xw.state |= WIN_VISIBLE | WIN_REDRAW;
 	}
-#endif
 }
 
 void
@@ -2635,19 +2624,14 @@ unmap(SDL_Event *ev) {
 
 void
 focus(SDL_Event *ev) {
-// TODO
-#if 0
-	if(ev->type == FocusIn) {
-		XSetICFocus(xw.xic);
+	if(ev->active.gain) {
 		xw.state |= WIN_FOCUSED;
 #if 0
 		xseturgency(0);
 #endif
 	} else {
-		XUnsetICFocus(xw.xic);
 		xw.state &= ~WIN_FOCUSED;
 	}
-#endif
 }
 
 char*
@@ -2702,7 +2686,7 @@ kpress(SDL_Event *ev) {
 			/* XXX: shift up/down doesn't work */
 			sprintf(buf, "\033%c%c",
 				IS_SET(MODE_APPKEYPAD) ? 'O' : '[',
-				(shift ? "abcd":"ABCD")[ksym - SDLK_UP]); // TODO
+				(shift ? "abcd":"ABCD")[ksym - SDLK_UP]);
 			ttywrite(buf, 3);
 			break;
 		case SDLK_INSERT:
@@ -2731,29 +2715,6 @@ kpress(SDL_Event *ev) {
 			break;
 		}
 	}
-}
-
-void
-cmessage(SDL_Event *e) {
-// TODO
-#if 0
-	/* See xembed specs
-	   http://standards.freedesktop.org/xembed-spec/xembed-spec-latest.html */
-	if(e->xclient.message_type == xw.xembed && e->xclient.format == 32) {
-		if(e->xclient.data.l[1] == XEMBED_FOCUS_IN) {
-			xw.state |= WIN_FOCUSED;
-#if 0
-			xseturgency(0);
-#endif
-		} else if(e->xclient.data.l[1] == XEMBED_FOCUS_OUT) {
-			xw.state &= ~WIN_FOCUSED;
-		}
-	} else if(e->xclient.data.l[0] == xw.wmdeletewin) {
-		/* Send SIGHUP to shell */
-		kill(pid, SIGHUP);
-		exit(EXIT_SUCCESS);
-	}
-#endif
 }
 
 void
@@ -2882,6 +2843,7 @@ main(int argc, char *argv[]) {
 			if(++i < argc)
 				opt_font = argv[i];
 			break;
+// TODO
 #if 0
 		case 'g':
 			if(++i >= argc)
@@ -2916,10 +2878,6 @@ main(int argc, char *argv[]) {
 		case 'v':
 		default:
 			die(USAGE);
-		case 'w':
-			if(++i < argc)
-				opt_embed = argv[i];
-			break;
 		}
 	}
 
