@@ -253,13 +253,14 @@ typedef struct {
 	short lbearing;
 	short rbearing;
 	//XftFont *xft_set;
+	TTF_Font *font; // TODO ?
 } Font;
 
 /* Drawing Context */
 typedef struct {
-	//XftColor xft_col[LEN(colorname) < 256 ? 256 : LEN(colorname)];
-	//GC gc;
-	Font font, bfont, ifont, ibfont;
+	SDL_Color colors[LEN(colormap) < 256 ? 256 : LEN(colormap)];
+	Font font;
+	//Font font, bfont, ifont, ibfont;
 } DC;
 
 static void die(const char *, ...);
@@ -311,8 +312,8 @@ static void ttywrite(const char *, size_t);
 static void xdraws(char *, Glyph, int, int, int, int);
 static void xclear(int, int, int, int);
 static void xdrawcursor(void);
-static void xinit(void);
-static void xloadcols(void);
+static void sdlinit(void);
+static void initcolormap(void);
 static void sdlresettitle(void);
 static void xsetsel(char*);
 static void sdltermclear(int, int, int, int);
@@ -2154,45 +2155,30 @@ xresize(int col, int row) {
 }
 
 void
-xloadcols(void) {
-// TODO: SDL_SetColors ?
-// TODO
-#if 0
+initcolormap(void) {
 	int i, r, g, b;
-	XRenderColor xft_color = { .alpha = 0 };
 
-	/* load colors [0-15] colors and [256-LEN(colorname)[ (config.h) */
-	for(i = 0; i < LEN(colorname); i++) {
-		if(!colorname[i])
-			continue;
-		if(!XftColorAllocName(xw.dpy, xw.vis, xw.cmap, colorname[i], &dc.xft_col[i])) {
-			die("Could not allocate color '%s'\n", colorname[i]);
-		}
-	}
+	// TODO: allow these to override the xterm ones somehow?
+	memcpy(dc.colors, colormap, sizeof(dc.colors));
 
-	/* load colors [16-255] ; same colors as xterm */
+	/* init colors [16-255] ; same colors as xterm */
 	for(i = 16, r = 0; r < 6; r++) {
 		for(g = 0; g < 6; g++) {
 			for(b = 0; b < 6; b++) {
-				xft_color.red = r == 0 ? 0 : 0x3737 + 0x2828 * r;
-				xft_color.green = g == 0 ? 0 : 0x3737 + 0x2828 * g;
-				xft_color.blue = b == 0 ? 0 : 0x3737 + 0x2828 * b;
-				if(!XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &xft_color, &dc.xft_col[i])) {
-					die("Could not allocate color %d\n", i);
-				}
+				dc.colors[i].r = r == 0 ? 0 : 0x3737 + 0x2828 * r;
+				dc.colors[i].g = g == 0 ? 0 : 0x3737 + 0x2828 * g;
+				dc.colors[i].b = b == 0 ? 0 : 0x3737 + 0x2828 * b;
 				i++;
 			}
 		}
 	}
 
 	for(r = 0; r < 24; r++, i++) {
-		xft_color.red = xft_color.green = xft_color.blue = 0x0808 + 0x0a0a * r;
-		if(!XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &xft_color,
-					&dc.xft_col[i])) {
-			die("Could not allocate color %d\n", i);
-		}
+		b =  0x0808 + 0x0a0a * r;
+		dc.colors[i].r = b;
+		dc.colors[i].g = b;
+		dc.colors[i].b = b;
 	}
-#endif
 }
 
 void
@@ -2203,10 +2189,8 @@ sdltermclear(int col1, int row1, int col2, int row2) {
 		(col2-col1+1) * xw.cw,
 		(row2-row1+1) * xw.ch
 	};
-
-	// TODO
-	//SDL_FillRect(xw.win, &r, dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg]);
-	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
+	SDL_Color c = dc.colors[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg];
+	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, c.r, c.g, c.b));
 }
 
 /*
@@ -2215,17 +2199,15 @@ sdltermclear(int col1, int row1, int col2, int row2) {
 void
 xclear(int x1, int y1, int x2, int y2) {
 	SDL_Rect r = { x1, y1, x2-x1, y2-y1 };
-
-	// TODO
-	//SDL_FillRect(xw.win, &r, dc.xft_col[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg]);
-	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
+	SDL_Color c = dc.colors[IS_SET(MODE_REVERSE) ? defaultfg : defaultbg];
+	SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, c.r, c.g, c.b));
 }
 
 void
 xloadfonts(char *fontstr, int fontsize) {
 if(!fontsize) fontsize = 15;
 
-drawfont = TTF_OpenFont("./ProggySquareSZ.ttf", fontsize);
+drawfont = TTF_OpenFont("./LiberationMono-Regular.ttf", fontsize);
 TTF_SizeUTF8(drawfont, "O", &xw.cw, &xw.ch);
 //TODO
 #if 0
@@ -2326,7 +2308,7 @@ sdlinit(void) {
 	xloadfonts(usedfont, 0);
 
 	/* colors */
-	xloadcols();
+	initcolormap();
 
 	/* adjust fixed window geometry */
 	if(xw.isfixed) {
@@ -2364,7 +2346,8 @@ xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
 int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch,
 	width = charlen * xw.cw;
 SDL_Surface *text_surface;
-SDL_Color color={255,255,255};
+SDL_Color color = dc.colors[defaultfg];
+SDL_Color bg = dc.colors[defaultbg];
 SDL_Rect r = {winx, winy, width, xw.ch};
 
 s[bytelen] = '\0';
@@ -2384,7 +2367,7 @@ s[bytelen] = '\0';
 		xclear(winx, winy + xw.ch, winx + width, xw.h);
 
 
-SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, 0, 0, 0));
+SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, bg.r, bg.g, bg.b));
 if(!(text_surface=TTF_RenderUTF8_Solid(drawfont,s,color))) {
 	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
 	exit(EXIT_FAILURE);
