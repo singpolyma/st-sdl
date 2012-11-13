@@ -2241,8 +2241,7 @@ sdlinit(void) {
 
 	dc.font = dc.ifont = dc.bfont = dc.ibfont = NULL;
 
-	// TODO: not everything
-	if(SDL_Init(SDL_INIT_EVERYTHING) == -1) {
+	if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_EVENTTHREAD) == -1) {
 		fprintf(stderr,"Unable to initialize SDL: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
 	}
