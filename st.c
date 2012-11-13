@@ -2288,9 +2288,6 @@ sdlinit(void) {
 		xw.fy = 0;
 	}
 
-	// TODO attrs.background_pixel = dc.xft_col[defaultbg].pixel;
-	// TODO attrs.colormap = xw.cmap;
-
 	if(!(xw.win = SDL_SetVideoMode(xw.w, xw.h, 16, SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_RESIZABLE))) {
 		fprintf(stderr,"Unable to set video mode: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
