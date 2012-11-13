@@ -610,40 +610,39 @@ getbuttoninfo(SDL_Event *e, int *b, int *x, int *y) {
 
 void
 mousereport(SDL_Event *e) {
-(void)e;
-// TODO
-#if 0
 	int x = x2col(e->button.x);
 	int y = y2row(e->button.y);
 	int button = e->button.button;
-	int state = e->button.state;
 	char buf[] = { '\033', '[', 'M', 0, 32+x+1, 32+y+1 };
 	static int ob, ox, oy;
 
 	/* from urxvt */
-	if(e->xbutton.type == MotionNotify) {
+	if(e->type == SDL_MOUSEMOTION) {
 		if(!IS_SET(MODE_MOUSEMOTION) || (x == ox && y == oy))
 			return;
 		button = ob + 32;
 		ox = x, oy = y;
-	} else if(e->xbutton.type == ButtonRelease || button == AnyButton) {
+	} else if(e->button.type == SDL_MOUSEBUTTONUP) {
 		button = 3;
 	} else {
-		button -= Button1;
+		button -= SDL_BUTTON_LEFT;
 		if(button >= 3)
 			button += 64 - 3;
-		if(e->xbutton.type == ButtonPress) {
+		if(e->button.type == SDL_MOUSEBUTTONDOWN) {
 			ob = button;
 			ox = x, oy = y;
 		}
 	}
 
+//TODO
+#if 0
 	buf[3] = 32 + button + (state & ShiftMask ? 4 : 0)
 		+ (state & Mod4Mask    ? 8  : 0)
 		+ (state & ControlMask ? 16 : 0);
+#endif
+	buf[3] = 32 + button;
 
 	ttywrite(buf, sizeof(buf));
-#endif
 }
 
 void
