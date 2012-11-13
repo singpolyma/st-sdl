@@ -2568,8 +2568,8 @@ kpress(SDL_Event *ev) {
 	/* 1. shortcuts */
 	for(i = 0; i < LEN(shortcuts); i++) {
 		if((ksym == shortcuts[i].keysym)
-				&& (CLEANMASK(shortcuts[i].mod) & \
-					CLEANMASK(e->keysym.mod) == CLEANMASK(e->keysym.mod))
+				&& ((CLEANMASK(shortcuts[i].mod) & \
+					CLEANMASK(e->keysym.mod)) == CLEANMASK(e->keysym.mod))
 				&& shortcuts[i].func) {
 			shortcuts[i].func(&(shortcuts[i].arg));
 		}
