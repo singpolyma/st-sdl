@@ -610,6 +610,7 @@ getbuttoninfo(SDL_Event *e, int *b, int *x, int *y) {
 
 void
 mousereport(SDL_Event *e) {
+(void)e;
 // TODO
 #if 0
 	int x = x2col(e->button.x);
@@ -898,7 +899,9 @@ execsh(void) {
 	char **args;
 	char *envshell = getenv("SHELL");
 	const struct passwd *pass = getpwuid(getuid());
+#if 0
 	char buf[sizeof(long) * 8 + 1];
+#endif
 
 	unsetenv("COLUMNS");
 	unsetenv("LINES");
@@ -911,8 +914,10 @@ execsh(void) {
 		setenv("HOME", pass->pw_dir, 0);
 	}
 
+#if 0
 	snprintf(buf, sizeof(buf), "%lu", xw.win);
 	setenv("WINDOWID", buf, 1);
+#endif
 
 	signal(SIGCHLD, SIG_DFL);
 	signal(SIGHUP, SIG_DFL);
@@ -931,6 +936,7 @@ execsh(void) {
 void
 sigchld(int a) {
 	int stat = 0;
+	(void)a;
 
 	if(waitpid(pid, &stat, 0) < 0)
 		die("Waiting for pid %hd failed: %s\n",	pid, SERRNO);
@@ -2221,8 +2227,7 @@ xzoom(const Arg *arg)
 
 void
 sdlinit(void) {
-	int major, minor;
-	SDL_VideoInfo *vi;
+	const SDL_VideoInfo *vi;
 
 	dc.font = dc.ifont = dc.bfont = dc.ibfont = NULL;
 
@@ -2515,6 +2520,7 @@ visibility(SDL_Event *ev) {
 
 void
 unmap(SDL_Event *ev) {
+	(void)ev;
 	xw.state &= ~WIN_VISIBLE;
 }
 
@@ -2718,8 +2724,7 @@ run(void) {
 
 int
 main(int argc, char *argv[]) {
-	int i, bitm, xr, yr;
-	uint wr, hr;
+	int i;
 
 	xw.fw = xw.fh = xw.fx = xw.fy = 0;
 	xw.isfixed = false;
