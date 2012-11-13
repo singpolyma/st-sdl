@@ -247,7 +247,7 @@ static void xzoom(const Arg *);
 /* Drawing Context */
 typedef struct {
 	SDL_Color colors[LEN(colormap) < 256 ? 256 : LEN(colormap)];
-	TTF_Font *font;
+	TTF_Font *font, *ifont, *bfont, *ibfont;
 } DC;
 
 static void die(const char *, ...);
@@ -2190,73 +2190,31 @@ xclear(int x1, int y1, int x2, int y2) {
 }
 
 void
-xloadfonts(char *fontstr, int fontsize) {
-if(!fontsize) fontsize = 15;
+sdlloadfonts(char *fontstr, int fontsize) {
+	usedfont = fontstr;
+	usedfontsize = fontsize;
 
-dc.font = TTF_OpenFont("./LiberationMono-Regular.ttf", fontsize);
-TTF_SizeUTF8(dc.font, "O", &xw.cw, &xw.ch);
-//TODO
-#if 0
-	FcPattern *pattern;
-	FcResult result;
-	double fontval;
+	if(dc.font) TTF_CloseFont(dc.font);
+	dc.font = TTF_OpenFont(fontstr, fontsize);
+	TTF_SizeUTF8(dc.font, "O", &xw.cw, &xw.ch);
 
-	if(fontstr[0] == '-') {
-		pattern = XftXlfdParse(fontstr, False, False);
-	} else {
-		pattern = FcNameParse((FcChar8 *)fontstr);
-	}
+	if(dc.ifont) TTF_CloseFont(dc.ifont);
+	dc.ifont = TTF_OpenFont(fontstr, fontsize);
+	TTF_SetFontStyle(dc.ifont, TTF_STYLE_ITALIC);
 
-	if(!pattern)
-		die("st: can't open font %s\n", fontstr);
+	if(dc.bfont) TTF_CloseFont(dc.bfont);
+	dc.bfont = TTF_OpenFont(fontstr, fontsize);
+	TTF_SetFontStyle(dc.bfont, TTF_STYLE_BOLD);
 
-	if(fontsize > 0) {
-		FcPatternDel(pattern, FC_PIXEL_SIZE);
-		FcPatternAddDouble(pattern, FC_PIXEL_SIZE, (double)fontsize);
-		usedfontsize = fontsize;
-	} else {
-		result = FcPatternGetDouble(pattern, FC_PIXEL_SIZE, 0, &fontval);
-		if(result == FcResultMatch) {
-			usedfontsize = (int)fontval;
-		} else {
-			/*
-			 * Default font size is 12, if none given. This is to
-			 * have a known usedfontsize value.
-			 */
-			FcPatternAddDouble(pattern, FC_PIXEL_SIZE, 12);
-			usedfontsize = 12;
-		}
-	}
-
-	if(xloadfont(&dc.font, pattern))
-		die("st: can't open font %s\n", fontstr);
-
-	/* Setting character width and height. */
-	xw.cw = dc.font.width;
-	xw.ch = dc.font.height;
-
-	FcPatternDel(pattern, FC_WEIGHT);
-	FcPatternAddInteger(pattern, FC_WEIGHT, FC_WEIGHT_BOLD);
-	if(xloadfont(&dc.bfont, pattern))
-		die("st: can't open font %s\n", fontstr);
-
-	FcPatternDel(pattern, FC_SLANT);
-	FcPatternAddInteger(pattern, FC_SLANT, FC_SLANT_ITALIC);
-	if(xloadfont(&dc.ibfont, pattern))
-		die("st: can't open font %s\n", fontstr);
-
-	FcPatternDel(pattern, FC_WEIGHT);
-	if(xloadfont(&dc.ifont, pattern))
-		die("st: can't open font %s\n", fontstr);
-
-	FcPatternDestroy(pattern);
-#endif
+	if(dc.ibfont) TTF_CloseFont(dc.ibfont);
+	dc.ibfont = TTF_OpenFont(fontstr, fontsize);
+	TTF_SetFontStyle(dc.ibfont, TTF_STYLE_ITALIC|TTF_STYLE_BOLD);
 }
 
 void
 xzoom(const Arg *arg)
 {
-	xloadfonts(usedfont, usedfontsize + arg->i);
+	sdlloadfonts(usedfont, usedfontsize + arg->i);
 	cresize(0, 0);
 	draw();
 }
@@ -2265,6 +2223,8 @@ void
 sdlinit(void) {
 	int major, minor;
 	SDL_VideoInfo *vi;
+
+	dc.font = dc.ifont = dc.bfont = dc.ibfont = NULL;
 
 	// TODO: not everything
 	if(SDL_Init(SDL_INIT_EVERYTHING) == -1) {
@@ -2291,7 +2251,7 @@ sdlinit(void) {
 
 	/* font */
 	usedfont = (opt_font == NULL)? font : opt_font;
-	xloadfonts(usedfont, 0);
+	sdlloadfonts(usedfont, fontsize);
 
 	/* colors */
 	initcolormap();
@@ -2329,59 +2289,24 @@ sdlinit(void) {
 
 void
 xdraws(char *s, Glyph base, int x, int y, int charlen, int bytelen) {
-int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch,
-	width = charlen * xw.cw;
-SDL_Surface *text_surface;
-SDL_Color color = dc.colors[defaultfg];
-SDL_Color bg = dc.colors[defaultbg];
-SDL_Rect r = {winx, winy, width, xw.ch};
-
-s[bytelen] = '\0';
-
-	/* Intelligent cleaning up of the borders. */
-	if(x == 0) {
-		xclear(0, (y == 0)? 0 : winy, borderpx,
-			winy + xw.ch + (y == term.row-1)? xw.h : 0);
-	}
-	if(x + charlen >= term.col-1) {
-		xclear(winx + width, (y == 0)? 0 : winy, xw.w,
-			(y == term.row-1)? xw.h : (winy + xw.ch));
-	}
-	if(y == 0)
-		xclear(winx, 0, winx + width, borderpx);
-	if(y == term.row-1)
-		xclear(winx, winy + xw.ch, winx + width, xw.h);
-
-
-SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, bg.r, bg.g, bg.b));
-if(!(text_surface=TTF_RenderUTF8_Solid(dc.font,s,color))) {
-	printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
-	exit(EXIT_FAILURE);
-} else {
-	SDL_BlitSurface(text_surface,NULL,xw.win,&r);
-	SDL_FreeSurface(text_surface);
-}
-
-// TODO
-#if 0
 	int winx = borderpx + x * xw.cw, winy = borderpx + y * xw.ch,
 	    width = charlen * xw.cw;
-	Font *font = &dc.font;
-	XGlyphInfo extents;
-	XftColor *fg = &dc.xft_col[base.fg], *bg = &dc.xft_col[base.bg],
-		 *temp, revfg, revbg;
-	XRenderColor colfg, colbg;
+	TTF_Font *font = dc.font;
+	SDL_Color *fg = &dc.colors[base.fg], *bg = &dc.colors[base.bg],
+	          *temp, revfg, revbg;
+
+	s[bytelen] = '\0';
 
 	if(base.mode & ATTR_BOLD) {
 		if(BETWEEN(base.fg, 0, 7)) {
 			/* basic system colors */
-			fg = &dc.xft_col[base.fg + 8];
+			fg = &dc.colors[base.fg + 8];
 		} else if(BETWEEN(base.fg, 16, 195)) {
 			/* 256 colors */
-			fg = &dc.xft_col[base.fg + 36];
+			fg = &dc.colors[base.fg + 36];
 		} else if(BETWEEN(base.fg, 232, 251)) {
 			/* greyscale */
-			fg = &dc.xft_col[base.fg + 4];
+			fg = &dc.colors[base.fg + 4];
 		}
 		/*
 		 * Those ranges will not be brightened:
@@ -2389,44 +2314,36 @@ if(!(text_surface=TTF_RenderUTF8_Solid(dc.font,s,color))) {
 		 *	196 - 231 – highest 256 color cube
 		 *	252 - 255 – brightest colors in greyscale
 		 */
-		font = &dc.bfont;
+		font = dc.bfont;
 	}
 
 	if(base.mode & ATTR_ITALIC)
-		font = &dc.ifont;
+		font = dc.ifont;
 	if((base.mode & ATTR_ITALIC) && (base.mode & ATTR_BOLD))
-		font = &dc.ibfont;
+		font = dc.ibfont;
 
 	if(IS_SET(MODE_REVERSE)) {
-		if(fg == &dc.xft_col[defaultfg]) {
-			fg = &dc.xft_col[defaultbg];
+		if(fg == &dc.colors[defaultfg]) {
+			fg = &dc.colors[defaultbg];
 		} else {
-			colfg.red = ~fg->color.red;
-			colfg.green = ~fg->color.green;
-			colfg.blue = ~fg->color.blue;
-			colfg.alpha = fg->color.alpha;
-			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colfg, &revfg);
+			revfg.r = ~fg->r;
+			revfg.g = ~fg->g;
+			revfg.b = ~fg->b;
 			fg = &revfg;
 		}
 
-		if(bg == &dc.xft_col[defaultbg]) {
-			bg = &dc.xft_col[defaultfg];
+		if(bg == &dc.colors[defaultbg]) {
+			bg = &dc.colors[defaultfg];
 		} else {
-			colbg.red = ~bg->color.red;
-			colbg.green = ~bg->color.green;
-			colbg.blue = ~bg->color.blue;
-			colbg.alpha = bg->color.alpha;
-			XftColorAllocValue(xw.dpy, xw.vis, xw.cmap, &colbg, &revbg);
+			revbg.r = ~bg->r;
+			revbg.g = ~bg->g;
+			revbg.b = ~bg->b;
 			bg = &revbg;
 		}
 	}
 
 	if(base.mode & ATTR_REVERSE)
 		temp = fg, fg = bg, bg = temp;
-
-	XftTextExtentsUtf8(xw.dpy, font->xft_set, (FcChar8 *)s, bytelen,
-			&extents);
-	width = extents.xOff;
 
 	/* Intelligent cleaning up of the borders. */
 	if(x == 0) {
@@ -2442,15 +2359,25 @@ if(!(text_surface=TTF_RenderUTF8_Solid(dc.font,s,color))) {
 	if(y == term.row-1)
 		xclear(winx, winy + xw.ch, winx + width, xw.h);
 
-	XftDrawRect(xw.xft_draw, bg, winx, winy, width, xw.ch);
-	XftDrawStringUtf8(xw.xft_draw, fg, font->xft_set, winx,
-			winy + font->ascent, (FcChar8 *)s, bytelen);
+	{
+		SDL_Surface *text_surface;
+		SDL_Rect r = {winx, winy, width, xw.ch};
 
-	if(base.mode & ATTR_UNDERLINE) {
-		XftDrawRect(xw.xft_draw, fg, winx, winy + font->ascent + 1,
-				width, 1);
+		SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, bg->r, bg->g, bg->b));
+		if(!(text_surface=TTF_RenderUTF8_Solid(font,s,*fg))) {
+			printf("Could not TTF_RenderUTF8_Solid: %s\n", TTF_GetError());
+			exit(EXIT_FAILURE);
+		} else {
+			SDL_BlitSurface(text_surface,NULL,xw.win,&r);
+			SDL_FreeSurface(text_surface);
+		}
+
+		if(base.mode & ATTR_UNDERLINE) {
+			r.y += TTF_FontAscent(font) + 1;
+			r.h = 1;
+			SDL_FillRect(xw.win, &r, SDL_MapRGB(xw.win->format, fg->r, fg->g, fg->b));
+		}
 	}
-#endif
 }
 
 void
