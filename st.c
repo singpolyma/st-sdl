@@ -2197,8 +2197,19 @@ xclear(int x1, int y1, int x2, int y2) {
 
 void
 sdlloadfonts(char *fontstr, int fontsize) {
+	char *bfontstr;
+
 	usedfont = fontstr;
 	usedfontsize = fontsize;
+
+	/* XXX: Strongly assumes the original setting had a : in it! */
+	if((bfontstr = strchr(fontstr, ':'))) {
+		*bfontstr = '\0';
+		bfontstr++;
+	} else {
+		bfontstr = strchr(fontstr, '\0');
+		bfontstr++;
+	}
 
 	if(dc.font) TTF_CloseFont(dc.font);
 	dc.font = TTF_OpenFont(fontstr, fontsize);
@@ -2209,12 +2220,11 @@ sdlloadfonts(char *fontstr, int fontsize) {
 	TTF_SetFontStyle(dc.ifont, TTF_STYLE_ITALIC);
 
 	if(dc.bfont) TTF_CloseFont(dc.bfont);
-	dc.bfont = TTF_OpenFont(fontstr, fontsize);
-	TTF_SetFontStyle(dc.bfont, TTF_STYLE_BOLD);
+	dc.bfont = TTF_OpenFont(bfontstr, fontsize);
 
 	if(dc.ibfont) TTF_CloseFont(dc.ibfont);
-	dc.ibfont = TTF_OpenFont(fontstr, fontsize);
-	TTF_SetFontStyle(dc.ibfont, TTF_STYLE_ITALIC|TTF_STYLE_BOLD);
+	dc.ibfont = TTF_OpenFont(bfontstr, fontsize);
+	TTF_SetFontStyle(dc.ibfont, TTF_STYLE_ITALIC);
 }
 
 void
