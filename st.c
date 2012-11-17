@@ -21,9 +21,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <SDL/SDL.h>
-#include <SDL/SDL_thread.h>
-#include <SDL/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_thread.h>
+#include <SDL_ttf.h>
 
 #define Glyph Glyph_
 #define Font Font_
