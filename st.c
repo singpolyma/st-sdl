@@ -34,6 +34,8 @@
  #include <util.h>
 #elif defined(__FreeBSD__) || defined(__DragonFly__)
  #include <libutil.h>
+#elif defined(__QNXNTO__)
+ #include <unix.h>
 #endif
 
 #define USAGE \
@@ -2240,7 +2242,7 @@ sdlinit(void) {
 
 	dc.font = dc.ifont = dc.bfont = dc.ibfont = NULL;
 
-	if(SDL_Init(SDL_INIT_VIDEO|SDL_INIT_EVENTTHREAD) == -1) {
+	if(SDL_Init(SDL_INIT_VIDEO) == -1) {
 		fprintf(stderr,"Unable to initialize SDL: %s\n", SDL_GetError());
 		exit(EXIT_FAILURE);
 	}
