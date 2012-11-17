@@ -2792,8 +2792,8 @@ main(int argc, char *argv[]) {
 run:
 	setlocale(LC_CTYPE, "");
 	tnew(80, 24);
-	sdlinit();
 	ttynew();
+	sdlinit(); /* Must have TTY before cresize */
 	selinit();
 	run();
 	return 0;
